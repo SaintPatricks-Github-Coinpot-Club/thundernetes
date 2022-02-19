@@ -2,14 +2,15 @@
 
 ## Release new thundernetes version
 
+This will require 2 PRs.
+
 - Make sure you update `.version` file on the root of this repository with the new version
-- Run `make create-install-files`
+- Run `make clean` to ensure any cached artifacts of old builds are deleted.
 - Push and merge
-- Run the GitHub Actions workflow [here](https://github.com/PlayFab/thundernetes/actions/workflows/publish.yml)
-
-## Generate install files
-
-Run `make create-install-files`.
+- Run the GitHub Actions workflow [here](https://github.com/PlayFab/thundernetes/actions/workflows/publish.yml) to create the new images
+- Run `make create-install-files` to generate the operator install files
+- Replace the image on the [netcore-sample YAML files](../samples/netcore)
+- Push and merge
 
 ## Metrics
 
@@ -30,18 +31,6 @@ openssl genrsa 2048 > private.pem
 openssl req -x509 -days 1000 -new -key private.pem -out public.pem
 kubectl create namespace thundernetes-system
 kubectl create secret tls tls-secret -n thundernetes-system --cert=/home/dgkanatsios/public.pem --key=/home/dgkanatsios/private.pem
-```
-
-### Install/deploy a specific commit
-
-```bash
-export TAG=$(git rev-list HEAD --max-count=1 --abbrev-commit)
-make build push
-IMG=ghcr.io/playfab/thundernetes-operator:${TAG} \
-  IMAGE_NAME_INIT_CONTAINER=docker.io/dgkanatsios/thundernetes-initcontainer \
-  IMAGE_NAME_SIDECAR=docker.io/dgkanatsios/thundernetes-sidecar-go \
-  API_SERVICE_SECURITY=none \
-   make -C operator install deploy
 ```
 
 ### Allocate a game server
@@ -79,14 +68,15 @@ for i in {1..50}; do SESSION_ID=$(uuidgen); curl --key ~/private.pem --cert ~/pu
 ## Run end to end tests locally
 
 ```bash
-make deletekindcluster && make builddockerlocal && make createkindcluster && make e2elocal
+make clean deletekindcluster builddockerlocal createkindcluster e2elocal
 ```
 
 ## Run controller locally
 
-export INIT_CONTAINER_TAG=...
-export SIDECAR_TAG=...
-cd operator && THUNDERNETES_SIDECAR_IMAGE=ghcr.io/playfab/thundernetes-sidecar-go:${SIDECAR_TAG} THUNDERNETES_INIT_CONTAINER_IMAGE=ghcr.io/playfab/thundernetes-initcontainer:${INIT_CONTAINER_TAG} go run main.go
+```bash
+cd operator
+THUNDERNETES_INIT_CONTAINER_IMAGE=ghcr.io/playfab/thundernetes-initcontainer:0.2.0 go run main.go
+```
 
 ## [ADVANCED] Install thundernetes via cloning this repository
 
@@ -98,10 +88,10 @@ IMG=ghcr.io/playfab/thundernetes-operator:${TAG} \
   IMAGE_NAME_INIT_CONTAINER=ghcr.io/playfab/thundernetes-initcontainer \
   IMAGE_NAME_SIDECAR=ghcr.io/playfab/thundernetes-sidecar-netcore \
   API_SERVICE_SECURITY=none \
-   make -C operator install deploy
+   make -C pkg/operator install deploy
 ```
 
-Note that this will install thundernetes without any security for the api service. If you want to enable security for the api service, you can should provide a certificate and key for the api service.
+Note that this will install thundernetes without any security for the allocation API service. If you want to enable security for the allocation API service, you can should provide a certificate and key for the allocation API service.
 
 You can use OpenSSL to create a self-signed certificate and key (not recommended for production).
 
@@ -117,7 +107,7 @@ kubectl create namespace thundernetes-system
 kubectl create secret tls tls-secret -n thundernetes-system --cert=/home/dgkanatsios/public.pem --key=/home/dgkanatsios/private.pem
 ```
 
-Then, you need to install the operator enabling TLS authentication for the API service.
+Then, you need to install the operator enabling TLS authentication for the allocation API service.
 
 ```bash
 export TAG=0.0.1.2
@@ -125,13 +115,13 @@ IMG=ghcr.io/playfab/thundernetes-operator:${TAG} \
   IMAGE_NAME_INIT_CONTAINER=docker.io/dgkanatsios/thundernetes-initcontainer \
   IMAGE_NAME_SIDECAR=docker.io/dgkanatsios/thundernetes-sidecar-netcore \
   API_SERVICE_SECURITY=usetls \
-   make -C operator install deploy
+   make -C pkg/operator install deploy
 ```
 
 As soon as this is done, you can run `kubectl -n thundernetes-system get pods` to verify that the operator pod is running. To run a demo gameserver, you can use the command:
 
 ```bash
-kubectl apply -f operator/config/samples/netcore.yaml
+kubectl apply -f pkg/operator/config/samples/netcore.yaml
 ```
 
 This will create a GameServerBuild with 2 standingBy and 4 maximum gameservers.
@@ -177,7 +167,7 @@ thundernetes-controller-manager   LoadBalancer   10.0.62.144   20.83.72.255   50
 
 The External-Ip field is the Public IP of the LoadBalancer that we can use to call the allocation API.
 
-If you have configured your API service with no security:
+If you have configured your allocation API service with no security:
 
 ```bash
 IP=...
@@ -235,9 +225,10 @@ gameserverbuild-sample-gqhrm   Healthy   StandingBy   52.183.88.255   80:10319
 Project was bootstrapped using [kubebuilder](https://github.com/kubernetes-sigs/kubebuilder) using the following commands:
 
 ```bash
-kubebuilder init --domain playfab.com --repo github.com/playfab/thundernetes/operator
+kubebuilder init --domain playfab.com --repo github.com/playfab/thundernetes/pkg/operator
 kubebuilder create api --group mps --version v1alpha1 --kind GameServer
 kubebuilder create api --group mps --version v1alpha1 --plural gameserverbuilds --kind GameServerBuild 
+kubebuilder create api --group mps --version v1alpha1 --plural gameserverdetails --kind GameServerDetail 
 ```
 
 ## env variables sample
@@ -246,16 +237,16 @@ kubebuilder create api --group mps --version v1alpha1 --plural gameserverbuilds 
 PUBLIC_IPV4_ADDRESS=20.184.250.154
 PF_REGION=WestUs
 PF_VM_ID=xcloudwus4u4yz5dlozul:WestUs:6b5973a5-a3a5-431a-8378-eff819dc0c25:tvmps_efa402aacd4f682230cfd91bd3dc0ddfae68c312f2b6905577cb7d9424681930_d
-PF_SHARED_CONTENT_FOLDER=/data/GameSharedContent
+PF_SHARED_CONTENT_FOLDER=/gsdkdata/GameSharedContent
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 PF_SERVER_INSTANCE_NUMBER=2
 PWD=/app
 PF_BUILD_ID=88a958b9-14fb-4ad9-85ca-5cc13207232e
-GSDK_CONFIG_FILE=/data/Config/gsdkConfig.json
+GSDK_CONFIG_FILE=/gsdkata/Config/gsdkConfig.json
 SHLVL=1
 HOME=/root
-CERTIFICATE_FOLDER=/data/GameCertificates
-PF_SERVER_LOG_DIRECTORY=/data/GameLogs/
+CERTIFICATE_FOLDER=/gsdkdata/GameCertificates
+PF_SERVER_LOG_DIRECTORY=/gsdkdata/GameLogs/
 PF_TITLE_ID=1E03
 _=/usr/bin/env
 ```
@@ -263,3 +254,15 @@ _=/usr/bin/env
 ## Docker compose
 
 The docker-compose.yml file on the root of this repo was created to facilitate sidecar development.
+
+## Test your changes to a cluster
+
+To test your changes to thundernetes to a Kubernetes cluster, you can use the following steps:
+
+- The Makefile on the root of the project contains a variable `NS` that points to the container registry that you use during development. So you'd need to either set the variable in your environment (`export NS=<your-container-registry>`) or set it before calling `make` (like `NS=<your-container-registry> make build push`).
+- Login to your container registry (`docker login`)
+- Run `make clean build push` to build the container images and push them to your container registry
+- Run `create-install-files-dev` to create the install files for the cluster
+- Checkout the `installfilesdev` folder for the generated install files. This file is included in .gitignore so it will never be committed.
+- Test your changes as required.
+ 

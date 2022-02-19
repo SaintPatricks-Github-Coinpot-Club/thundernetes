@@ -1,6 +1,6 @@
 # How to run your game server on thundernetes?
 
-You can run your own game server on thundernetes, to verify that it is working as expected. This guide will walk you through on using thundernetes i) locally using kind and ii) on Azure Kubernetes Service.
+You can use thundernetes to host your game servers. This guide will walk you through on using thundernetes i) locally using kind and ii) on Azure Kubernetes Service.
 
 ## Creating a local cluster with kind
 
@@ -15,7 +15,7 @@ Refer to the instructions at the [quickstart guide](./quickstart.md) for creatin
 - Install thundernetes with: 
 
 ```bash
-kubectl apply -f https://raw.githubusercontent.com/PlayFab/thundernetes/master/installfiles/operator.yaml
+kubectl apply -f https://raw.githubusercontent.com/PlayFab/thundernetes/main/installfiles/operator.yaml
 ```
 
 - Run this command to verify that the controller is up and running:
@@ -55,14 +55,15 @@ spec:
   portsToExpose:
     - containerName: thundernetes-sample # must be the same as the container name described below
       portName: gameport # must be the same as the port name described below
-  podSpec:
-    containers:
-      - image: thundernetes-netcore-sample:0.0.1.2
-        name: thundernetes-sample
-        ports:
-        - containerPort: 80 # your game server port
-          protocol: TCP # your game server port protocol
-          name: gameport # required field
+  template:
+    spec:
+      containers:
+        - image: thundernetes-netcore:0.2.0
+          name: thundernetes-sample
+          ports:
+          - containerPort: 80 # your game server port
+            protocol: TCP # your game server port protocol
+            name: gameport # required field
 ```
 
 You can call this file `gameserverbuild.yaml`.
@@ -87,4 +88,21 @@ gameserverbuild-sample-spdob   Healthy   StandingBy   172.18.0.2   80:14208
 
 ## Run your game server on Azure Kubernetes Service
 
-As soon as you build your container image, you should publish it to a container registry. If you are using Azure Kubernetes Service, we recommend publishing your image to [Azure Container Registry](https://docs.microsoft.com/en-us/azure/container-registry/). To integrate your Azure Container Registry with your Azure Kubernetes Service cluster, check the instructions [here](https://docs.microsoft.com/en-us/azure/aks/cluster-container-registry-integration).
+As soon as you build your container image, you should publish it to a container registry. If you are using Azure Kubernetes Service, we recommend publishing your image to [Azure Container Registry](https://docs.microsoft.com/azure/container-registry/). To integrate your Azure Container Registry with your Azure Kubernetes Service cluster, check the instructions [here](https://docs.microsoft.com/azure/aks/cluster-container-registry-integration).
+
+## Using host networking
+
+Thundernetes supports running your GameServer Pods under host networking. To do that, you need to provide a GameServerBuild YAML like [this](../samples/netcore/sample-hostnetwork.yaml), setting the `hostNetwork` value to true on PodSpec template. During Pod creation, thundernetes controllers will override the containerPort with the same value that will be assigned in the hostPort. 
+
+> Unfortunately, it is still necessary to provide a `containerPort` value in the GameServerBuild YAML, since it is required for GameServerBuild validation. However, as mentioned, this provided value is used nowhere since it's overwritten by the `hostPort` value.
+
+## Game server image upgrades
+
+You should **not** change the container image of your GameServerBuild. The best practice to upgrade your game server version is to
+
+- spin up a separate GameServerBuild 
+- configure your matchmaker to allocate against this new GameServerBuild
+- configure the original GameServerBuild to 0 standingBy
+- when all the active games in the original GameServerBuild end, you can safely delete it
+
+However, at this point, thundernetes does not do anything to prevent you from changing the container image on the GameServerBuild YAML file, but you should consider the GameServerBuild as immutable (apart from changing the standingBy and max numbers, of course).

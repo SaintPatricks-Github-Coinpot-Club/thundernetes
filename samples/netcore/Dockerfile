@@ -1,21 +1,20 @@
-﻿FROM mcr.microsoft.com/dotnet/aspnet:5.0-alpine AS base
+﻿FROM mcr.microsoft.com/dotnet/aspnet:6.0-alpine AS base
 WORKDIR /app
 EXPOSE 56001
 
-FROM mcr.microsoft.com/dotnet/sdk:5.0-alpine AS build
+FROM mcr.microsoft.com/dotnet/sdk:6.0-alpine AS build
 WORKDIR /src
-COPY ["netcore.csproj", ""]
+COPY samples/netcore/netcore.csproj .
 RUN dotnet restore "./netcore.csproj"
-COPY . .
+COPY samples/netcore/ .
 WORKDIR "/src/."
 RUN dotnet build "netcore.csproj" -c Release -o /app/build
 
 FROM build AS publish
-RUN dotnet publish "netcore.csproj" -c Release -o /app/publish --runtime alpine-x64 
-    #--self-contained true \
-    #/p:PublishTrimmed=true \
-    #/p:PublishSingleFile=true
-
+RUN dotnet publish "netcore.csproj" -c Release -o /app/publish
+#--self-contained true \
+#/p:PublishTrimmed=true \
+#/p:PublishSingleFile=true
 
 FROM base AS final
 WORKDIR /app
